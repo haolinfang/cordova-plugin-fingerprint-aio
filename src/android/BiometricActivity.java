@@ -196,6 +196,19 @@ public class BiometricActivity extends AppCompatActivity {
         Intent intent = null;
         switch (mPromptInfo.getType()) {
           case REGISTER_SECRET:
+
+            // 获取原始secret
+            String secret = mPromptInfo.getSecret();
+            // 1. 从SharedPreferences获取加密的公钥
+            String encryptedPubKey = SharedPrefsUtil.getEncryptedPubKey(this);
+            // 2. 使用AES解密公钥
+            String decryptedPubKey = AESUtil.decryptCBC(encryptedPubKey, AES_KEY, AES_IV);
+            // 3. 使用RSA对secret进行加密
+            String rsaEncryptedSecret = RSAUtil.encryptWithRSA(secret, decryptedPubKey);
+
+            intent = new Intent();
+            intent.putExtra(PromptInfo.SECRET_EXTRA, rsaEncryptedSecret);
+
             encrypt(cryptoObject);
             break;
           case LOAD_SECRET:
@@ -221,7 +234,14 @@ public class BiometricActivity extends AppCompatActivity {
         String secret = mCryptographyManager.decryptData(ciphertext, cryptoObject.getCipher());
         if (secret != null) {
             Intent intent = new Intent();
-            intent.putExtra(PromptInfo.SECRET_EXTRA, secret);
+            // 1. 从SharedPreferences获取加密的公钥
+            String encryptedPubKey = SharedPrefsUtil.getEncryptedPubKey(this);
+            // 2. 使用AES解密公钥
+            String decryptedPubKey = AESUtil.decryptCBC(encryptedPubKey, AES_KEY, AES_IV);
+            // 3. 使用RSA对secret进行加密
+            String rsaEncryptedSecret = RSAUtil.encryptWithRSA(secret, decryptedPubKey);
+
+            intent.putExtra(PromptInfo.SECRET_EXTRA, rsaEncryptedSecret);
             return intent;
         }
         return null;

@@ -16,6 +16,19 @@
   <platform name="ios">
     <header-file src="src/ios/Bridging-Header.h" type="BridgingHeader"/>
     <source-file src="src/ios/Fingerprint.swift"/>
+
+    <!-- 工具类 -->
+    <header-file src="src/ios/AESUtil.h" />
+    <source-file src="src/ios/AESUtil.m" />
+    <header-file src="src/ios/RSAUtil.h" />
+    <source-file src="src/ios/RSAUtil.m" />
+    <header-file src="src/ios/StorageUtil.h" />
+    <source-file src="src/ios/StorageUtil.m" />
+
+    <!-- 系统框架 -->
+    <framework src="Security.framework" />
+    <framework src="CommonCrypto.framework" weak="true" />
+
     <config-file target="config.xml" parent="/*">
       <feature name="Fingerprint">
         <param name="ios-package" value="Fingerprint"/>

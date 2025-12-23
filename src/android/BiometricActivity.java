@@ -13,11 +13,16 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 
+import org.apache.cordova.device.Device;
+
 import java.util.concurrent.Executor;
 
 import javax.crypto.Cipher;
 
 public class BiometricActivity extends AppCompatActivity {
+
+    private String key = "";
+    private String iv = "";
 
     private static final int REQUEST_CODE_CONFIRM_DEVICE_CREDENTIALS = 2;
     private PromptInfo mPromptInfo;
@@ -199,15 +204,20 @@ public class BiometricActivity extends AppCompatActivity {
 
             // 获取原始secret
             String secret = mPromptInfo.getSecret();
-            // 1. 从SharedPreferences获取加密的公钥
-            String encryptedPubKey = SharedPrefsUtil.getEncryptedPubKey(this);
-            // 2. 使用AES解密公钥
-            String decryptedPubKey = AESUtil.decryptCBC(encryptedPubKey, AES_KEY, AES_IV);
-            // 3. 使用RSA对secret进行加密
-            String rsaEncryptedSecret = RSAUtil.encryptWithRSA(secret, decryptedPubKey);
+            try {
+                // 1. 从SharedPreferences获取加密的公钥
+                String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, "pubKey");
+                // 2. 使用AES解密公钥
+                String decryptedPubKey = cordova.plugins.AESUtil.decryptCBC(encryptedPubKey, key, iv);
+                // 3. 使用RSA对secret进行加密
+                long timestamp = System.currentTimeMillis() / 1000;
+                String rsaEncryptedSecret = cordova.plugins.RSAUtil.encryptWithRSA(Device.uuid + "##" + secret + "##" + timestamp, decryptedPubKey);
 
-            intent = new Intent();
-            intent.putExtra(PromptInfo.SECRET_EXTRA, rsaEncryptedSecret);
+                intent = new Intent();
+                intent.putExtra(PromptInfo.SECRET_EXTRA, rsaEncryptedSecret);
+            } catch (Exception e) {
+                //
+            }
 
             encrypt(cryptoObject);
             break;
@@ -234,14 +244,18 @@ public class BiometricActivity extends AppCompatActivity {
         String secret = mCryptographyManager.decryptData(ciphertext, cryptoObject.getCipher());
         if (secret != null) {
             Intent intent = new Intent();
-            // 1. 从SharedPreferences获取加密的公钥
-            String encryptedPubKey = SharedPrefsUtil.getEncryptedPubKey(this);
-            // 2. 使用AES解密公钥
-            String decryptedPubKey = AESUtil.decryptCBC(encryptedPubKey, AES_KEY, AES_IV);
-            // 3. 使用RSA对secret进行加密
-            String rsaEncryptedSecret = RSAUtil.encryptWithRSA(secret, decryptedPubKey);
-
-            intent.putExtra(PromptInfo.SECRET_EXTRA, rsaEncryptedSecret);
+            try {
+                // 1. 从SharedPreferences获取加密的公钥
+                String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, "pubKey");
+                // 2. 使用AES解密公钥
+                String decryptedPubKey = cordova.plugins.AESUtil.decryptCBC(encryptedPubKey, key, iv);
+                // 3. 使用RSA对secret进行加密
+                long timestamp = System.currentTimeMillis() / 1000;
+                String rsaEncryptedSecret = cordova.plugins.RSAUtil.encryptWithRSA(Device.uuid + "##" + secret + "##" + timestamp, decryptedPubKey);
+                intent.putExtra(PromptInfo.SECRET_EXTRA, rsaEncryptedSecret);
+            } catch(Exception e) {
+                // 
+            }
             return intent;
         }
         return null;

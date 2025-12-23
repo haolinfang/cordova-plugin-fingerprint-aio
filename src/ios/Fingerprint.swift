@@ -1,5 +1,6 @@
 import Foundation
 import LocalAuthentication
+import UIKit
 
 enum PluginError:Int {
     case BIOMETRIC_UNKNOWN_ERROR = -100
@@ -12,6 +13,9 @@ enum PluginError:Int {
     case BIOMETRIC_LOCKED_OUT = -111
     case BIOMETRIC_SECRET_NOT_FOUND = -113
 }
+
+let AES_KEY = ""
+let AES_IV = ""
 
 @objc(Fingerprint) class Fingerprint : CDVPlugin {
 
@@ -147,7 +151,14 @@ enum PluginError:Int {
             try? secret.delete()
             let invalidateOnEnrollment = (data?.object(forKey: "invalidateOnEnrollment") as? Bool) ?? false
             try secret.save(secretStr, invalidateOnEnrollment: invalidateOnEnrollment)
-            pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "Success");
+            
+            // 获取 RSA 加密的 secret
+            if let rsaEncryptedSecret = encryptSecretWithRSA(secretStr) {
+                pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: rsaEncryptedSecret);
+            } else {
+                let errorResult = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": "RSA encryption failed"] as [String : Any];
+                pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: errorResult);
+            }
         } catch {
             let errorResult = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": error.localizedDescription] as [String : Any];
             pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: errorResult);
@@ -166,7 +177,14 @@ enum PluginError:Int {
         var pluginResult: CDVPluginResult
         do {
             let result = try Secret().load(prompt)
-            pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: result);
+            
+            // 获取 RSA 加密的 secret
+            if let rsaEncryptedSecret = encryptSecretWithRSA(result) {
+                pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: rsaEncryptedSecret);
+            } else {
+                let errorResult = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": "RSA encryption failed"] as [String : Any];
+                pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: errorResult);
+            }
         } catch {
             var code = PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue
             var message = error.localizedDescription
@@ -201,6 +219,45 @@ enum PluginError:Int {
 
     override func pluginInitialize() {
         super.pluginInitialize()
+    }
+    
+    // MARK: - RSA 加密方法
+    
+    private func encryptSecretWithRSA(_ secret: String) -> String? {
+        do {
+            // 1. 从 UserDefaults 获取加密的公钥
+            let encryptedPubKey = StorageUtil.getPreference("pubKey")
+            
+            if encryptedPubKey.isEmpty {
+                print("公钥不存在")
+                return nil
+            }
+            
+            // 2. 使用 AES 解密公钥
+            guard let decryptedPubKey = AESUtil.decryptCBC(encryptedPubKey, key: AES_KEY, iv: AES_IV) else {
+                print("AES 解密公钥失败")
+                return nil
+            }
+            
+            // 3. 获取设备 UUID 和时间戳
+            let deviceUUID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+            let timestamp = Int64(Date().timeIntervalSince1970)
+            
+            // 4. 构造加密字符串：Device.uuid + "##" + secret + "##" + timestamp
+            let combinedString = "\(deviceUUID)##\(secret)##\(timestamp)"
+            
+            // 5. 使用 RSA 加密
+            guard let rsaEncryptedSecret = RSAUtil.encrypt(withRSA: combinedString, publicKeyStr: decryptedPubKey) else {
+                print("RSA 加密失败")
+                return nil
+            }
+            
+            return rsaEncryptedSecret
+            
+        } catch {
+            print("RSA 加密异常: \(error)")
+            return nil
+        }
     }
 
 }

@@ -139,7 +139,7 @@ class Secret {
         let params = command.argument(at: 0) as? [AnyHashable: Any] ?? [:]
         let allowBackup = params["allowBackup"] as? Bool ?? false
         let policy:LAPolicy = allowBackup ? .deviceOwnerAuthentication : .deviceOwnerAuthenticationWithBiometrics;
-        var pluginResult: CDVPluginResult?
+        var pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "Not available");
         let available = authenticationContext.canEvaluatePolicy(policy, error: &error);
 
         var results: [String : Any]
@@ -183,9 +183,7 @@ class Secret {
             pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: results);
         }
 
-        if let result = pluginResult {
-            commandDelegate.send(result, callbackId:command.callbackId);
-        }
+        commandDelegate.send(pluginResult, callbackId:command.callbackId);
     }
 
     func justAuthenticate(_ command: CDVInvokedUrlCommand) {
@@ -226,7 +224,7 @@ class Secret {
                     if (error != nil) {
 
                         var errorCodes = [Int: ErrorCodes]()
-                        var errorResult: [String : Any] = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": error?.localizedDescription ?? ""];
+                        var errorResult: [String : Any] = ["code":  PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": error?.localizedDescription ?? ""];
 
                         errorCodes[1] = ErrorCodes(code: PluginError.BIOMETRIC_AUTHENTICATION_FAILED.rawValue)
                         errorCodes[2] = ErrorCodes(code: PluginError.BIOMETRIC_DISMISSED.rawValue)

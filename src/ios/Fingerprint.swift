@@ -16,8 +16,8 @@ enum PluginError:Int {
     case BIOMETRIC_SECRET_NOT_FOUND = -113
 }
 
-let AES_KEY = "a9s8d7f6g5h4j3k2"
-let AES_IV = "z1x2c3v4b5n6m7q8"
+let AES_KEY = ""
+let AES_IV = ""
 
 /// Keychain errors we might encounter.
 struct KeychainError: Error {
@@ -122,11 +122,11 @@ class Secret {
 }
 
 @objc(Fingerprint) class Fingerprint : CDVPlugin {
-
+    
     struct ErrorCodes {
         var code: Int
     }
-
+    
     @objc(isAvailable:)
     func isAvailable(_ command: CDVInvokedUrlCommand){
         let authenticationContext = LAContext();
@@ -141,15 +141,15 @@ class Secret {
         let policy:LAPolicy = allowBackup ? .deviceOwnerAuthentication : .deviceOwnerAuthenticationWithBiometrics;
         var pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "Not available");
         let available = authenticationContext.canEvaluatePolicy(policy, error: &error);
-
+        
         var results: [String : Any]
-
+        
         if(error != nil){
             biometryType = "none";
             errorResponse["code"] = error?.code;
             errorResponse["message"] = error?.localizedDescription;
         }
-
+        
         if (available == true) {
             if #available(iOS 11.0, *) {
                 switch(authenticationContext.biometryType) {
@@ -163,29 +163,29 @@ class Secret {
                     errorResponse["message"] = "Unkown biometry type"
                 }
             }
-
+            
             pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: biometryType);
         }else{
             var code: Int;
             switch(error!._code) {
-                case Int(kLAErrorBiometryNotAvailable):
-                    code = PluginError.BIOMETRIC_UNAVAILABLE.rawValue;
-                    break;
-                case Int(kLAErrorBiometryNotEnrolled):
-                    code = PluginError.BIOMETRIC_NOT_ENROLLED.rawValue;
-                    break;
-
-                default:
-                    code = PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue;
-                    break;
+            case Int(kLAErrorBiometryNotAvailable):
+                code = PluginError.BIOMETRIC_UNAVAILABLE.rawValue;
+                break;
+            case Int(kLAErrorBiometryNotEnrolled):
+                code = PluginError.BIOMETRIC_NOT_ENROLLED.rawValue;
+                break;
+                
+            default:
+                code = PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue;
+                break;
             }
             results = ["code": code, "message": error!.localizedDescription];
             pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: results);
         }
-
+        
         commandDelegate.send(pluginResult, callbackId:command.callbackId);
     }
-
+    
     func justAuthenticate(_ command: CDVInvokedUrlCommand) {
         let authenticationContext = LAContext();
         let errorResponse: [AnyHashable: Any] = [
@@ -195,7 +195,7 @@ class Secret {
         var reason = "Authentication";
         var policy:LAPolicy = .deviceOwnerAuthentication;
         let data  = command.arguments[0] as? [String: Any];
-
+        
         if let disableBackup = data?["disableBackup"] as! Bool? {
             if disableBackup {
                 authenticationContext.localizedFallbackTitle = "";
@@ -208,12 +208,12 @@ class Secret {
                 }
             }
         }
-
+        
         // Localized reason
         if let description = data?["description"] as! String? {
             reason = description;
         }
-
+        
         authenticationContext.evaluatePolicy(
             policy,
             localizedReason: reason,
@@ -222,22 +222,22 @@ class Secret {
                     pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "Success");
                 }else {
                     if (error != nil) {
-
+                        
                         var errorCodes = [Int: ErrorCodes]()
                         var errorResult: [String : Any] = ["code":  PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": error?.localizedDescription ?? ""];
-
+                        
                         errorCodes[1] = ErrorCodes(code: PluginError.BIOMETRIC_AUTHENTICATION_FAILED.rawValue)
                         errorCodes[2] = ErrorCodes(code: PluginError.BIOMETRIC_DISMISSED.rawValue)
                         errorCodes[5] = ErrorCodes(code: PluginError.BIOMETRIC_SCREEN_GUARD_UNSECURED.rawValue)
                         errorCodes[6] = ErrorCodes(code: PluginError.BIOMETRIC_UNAVAILABLE.rawValue)
                         errorCodes[7] = ErrorCodes(code: PluginError.BIOMETRIC_NOT_ENROLLED.rawValue)
                         errorCodes[8] = ErrorCodes(code: PluginError.BIOMETRIC_LOCKED_OUT.rawValue)
-
+                        
                         let errorCode = abs(error!._code)
                         if let e = errorCodes[errorCode] {
-                           errorResult = ["code": e.code, "message": error!.localizedDescription];
+                            errorResult = ["code": e.code, "message": error!.localizedDescription];
                         }
-
+                        
                         pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: errorResult);
                     }
                 }
@@ -245,7 +245,7 @@ class Secret {
             }
         );
     }
-
+    
     func saveSecret(_ secretStr: String, command: CDVInvokedUrlCommand) {
         let data  = command.arguments[0] as AnyObject?;
         var pluginResult: CDVPluginResult
@@ -269,8 +269,8 @@ class Secret {
         self.commandDelegate.send(pluginResult, callbackId:command.callbackId)
         return
     }
-
-
+    
+    
     func loadSecret(_ command: CDVInvokedUrlCommand) {
         let data  = command.arguments[0] as AnyObject?;
         var prompt = "Authentication"
@@ -300,12 +300,12 @@ class Secret {
         }
         self.commandDelegate.send(pluginResult, callbackId:command.callbackId)
     }
-
+    
     @objc(authenticate:)
     func authenticate(_ command: CDVInvokedUrlCommand){
         justAuthenticate(command)
     }
-
+    
     @objc(registerBiometricSecret:)
     func registerBiometricSecret(_ command: CDVInvokedUrlCommand){
         let data  = command.arguments[0] as AnyObject?;
@@ -314,12 +314,12 @@ class Secret {
             return
         }
     }
-
+    
     @objc(loadBiometricSecret:)
     func loadBiometricSecret(_ command: CDVInvokedUrlCommand){
         self.loadSecret(command)
     }
-
+    
     override func pluginInitialize() {
         super.pluginInitialize()
     }
@@ -394,7 +394,7 @@ class Secret {
             }
             
             // 3. 获取设备 UUID 和时间戳
-            let deviceUUID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+            let deviceUUID = getDeviceUUID();
             let timestamp = Int64(Date().timeIntervalSince1970)
             
             // 4. 构造加密字符串：Device.uuid + "##" + secret + "##" + timestamp
@@ -528,5 +528,37 @@ class Secret {
         }
         
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+    
+    private func getDeviceUUID() -> String {
+        let userDefaults = UserDefaults.standard
+        let uuidKey = "CDVUUID"
+        
+        // 检查 UserDefaults 中是否已存储
+        if let storedUUID = userDefaults.string(forKey: uuidKey) {
+            return storedUUID
+        }
+        
+        var newUUID: String
+        
+        // 使用 identifierForVendor（iOS 6.0+）
+        if #available(iOS 6.0, *) {
+            newUUID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+        } else {
+            // iOS 6.0 以下使用 CFUUID
+            let uuidRef = CFUUIDCreate(nil)
+            newUUID = CFUUIDCreateString(nil, uuidRef) as String
+        }
+        
+        // 如果获取到的 UUID 为空，则生成一个新的
+        if newUUID.isEmpty {
+            newUUID = UUID().uuidString
+        }
+        
+        // 存储到 UserDefaults
+        userDefaults.set(newUUID, forKey: uuidKey)
+        userDefaults.synchronize()
+        
+        return newUUID
     }
 }

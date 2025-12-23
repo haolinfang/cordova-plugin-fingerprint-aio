@@ -1,6 +1,8 @@
 import Foundation
 import LocalAuthentication
 import UIKit
+import CommonCrypto
+import Security
 
 enum PluginError:Int {
     case BIOMETRIC_UNKNOWN_ERROR = -100
@@ -14,8 +16,8 @@ enum PluginError:Int {
     case BIOMETRIC_SECRET_NOT_FOUND = -113
 }
 
-let AES_KEY = ""
-let AES_IV = ""
+let AES_KEY = "a9s8d7f6g5h4j3k2"
+let AES_IV = "z1x2c3v4b5n6m7q8"
 
 @objc(Fingerprint) class Fingerprint : CDVPlugin {
 
@@ -36,7 +38,7 @@ let AES_IV = ""
         let params = command.argument(at: 0) as? [AnyHashable: Any] ?? [:]
         let allowBackup = params["allowBackup"] as? Bool ?? false
         let policy:LAPolicy = allowBackup ? .deviceOwnerAuthentication : .deviceOwnerAuthenticationWithBiometrics;
-        var pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: "Not available");
+        var pluginResult: CDVPluginResult?
         let available = authenticationContext.canEvaluatePolicy(policy, error: &error);
 
         var results: [String : Any]
@@ -80,7 +82,9 @@ let AES_IV = ""
             pluginResult = CDVPluginResult(status: CDVCommandStatus_ERROR, messageAs: results);
         }
 
-        commandDelegate.send(pluginResult, callbackId:command.callbackId);
+        if let result = pluginResult {
+            commandDelegate.send(result, callbackId:command.callbackId);
+        }
     }
 
     func justAuthenticate(_ command: CDVInvokedUrlCommand) {
@@ -121,7 +125,7 @@ let AES_IV = ""
                     if (error != nil) {
 
                         var errorCodes = [Int: ErrorCodes]()
-                        var errorResult: [String : Any] = ["code":  PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": error?.localizedDescription ?? ""];
+                        var errorResult: [String : Any] = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": error?.localizedDescription ?? ""];
 
                         errorCodes[1] = ErrorCodes(code: PluginError.BIOMETRIC_AUTHENTICATION_FAILED.rawValue)
                         errorCodes[2] = ErrorCodes(code: PluginError.BIOMETRIC_DISMISSED.rawValue)
@@ -226,7 +230,7 @@ let AES_IV = ""
     private func encryptSecretWithRSA(_ secret: String) -> String? {
         do {
             // 1. 从 UserDefaults 获取加密的公钥
-            let encryptedPubKey = StorageUtil.getPreference("pubKey")
+            let encryptedPubKey = getPreference("pubKey")
             
             if encryptedPubKey.isEmpty {
                 print("公钥不存在")
@@ -234,7 +238,7 @@ let AES_IV = ""
             }
             
             // 2. 使用 AES 解密公钥
-            guard let decryptedPubKey = AESUtil.decryptCBC(encryptedPubKey, key: AES_KEY, iv: AES_IV) else {
+            guard let decryptedPubKey = decryptAESCBC(encryptedPubKey, key: AES_KEY, iv: AES_IV) else {
                 print("AES 解密公钥失败")
                 return nil
             }
@@ -247,7 +251,7 @@ let AES_IV = ""
             let combinedString = "\(deviceUUID)##\(secret)##\(timestamp)"
             
             // 5. 使用 RSA 加密
-            guard let rsaEncryptedSecret = RSAUtil.encrypt(withRSA: combinedString, publicKeyStr: decryptedPubKey) else {
+            guard let rsaEncryptedSecret = encryptWithRSA(combinedString, publicKeyStr: decryptedPubKey) else {
                 print("RSA 加密失败")
                 return nil
             }
@@ -258,6 +262,175 @@ let AES_IV = ""
             print("RSA 加密异常: \(error)")
             return nil
         }
+    }
+    
+    // MARK: - 存储工具方法（替代 StorageUtil）
+    
+    private func savePreference(_ key: String, value: String) {
+        UserDefaults.standard.set(value, forKey: key)
+        UserDefaults.standard.synchronize()
+    }
+    
+    private func getPreference(_ key: String) -> String {
+        return UserDefaults.standard.string(forKey: key) ?? ""
+    }
+    
+    // MARK: - AES CBC 加解密方法（替代 AESUtil）
+    
+    private func encryptAESCBC(_ plaintext: String, key: String, iv: String) -> String? {
+        guard let plainData = plaintext.data(using: .utf8),
+              let keyData = key.data(using: .utf8) else {
+            return nil
+        }
+        
+        var ivData = iv.data(using: .utf8) ?? keyData
+        
+        // 确保IV长度为16字节
+        if ivData.count < 16 {
+            ivData = padData(ivData, toLength: 16)
+        } else if ivData.count > 16 {
+            ivData = ivData.subdata(in: 0..<16)
+        }
+        
+        // 加密
+        var encryptedBytes = [UInt8](repeating: 0, count: plainData.count + kCCBlockSizeAES128)
+        var encryptedLength: Int = 0
+        
+        let cryptStatus = CCCrypt(
+            CCOperation(kCCEncrypt),
+            CCAlgorithm(kCCAlgorithmAES),
+            CCOptions(kCCOptionPKCS7Padding),
+            Array(keyData),
+            kCCKeySizeAES128,
+            Array(ivData),
+            Array(plainData),
+            plainData.count,
+            &encryptedBytes,
+            encryptedBytes.count,
+            &encryptedLength
+        )
+        
+        if cryptStatus == kCCSuccess {
+            let encryptedData = Data(bytes: encryptedBytes, count: encryptedLength)
+            return encryptedData.base64EncodedString()
+        }
+        
+        return nil
+    }
+    
+    private func decryptAESCBC(_ encryptedBase64: String, key: String, iv: String) -> String? {
+        guard let encryptedData = Data(base64Encoded: encryptedBase64),
+              let keyData = key.data(using: .utf8) else {
+            return nil
+        }
+        
+        var ivData = iv.data(using: .utf8) ?? keyData
+        
+        // 确保IV长度为16字节
+        if ivData.count < 16 {
+            ivData = padData(ivData, toLength: 16)
+        } else if ivData.count > 16 {
+            ivData = ivData.subdata(in: 0..<16)
+        }
+        
+        // 解密
+        var decryptedBytes = [UInt8](repeating: 0, count: encryptedData.count + kCCBlockSizeAES128)
+        var decryptedLength: Int = 0
+        
+        let cryptStatus = CCCrypt(
+            CCOperation(kCCDecrypt),
+            CCAlgorithm(kCCAlgorithmAES),
+            CCOptions(kCCOptionPKCS7Padding),
+            Array(keyData),
+            kCCKeySizeAES128,
+            Array(ivData),
+            Array(encryptedData),
+            encryptedData.count,
+            &decryptedBytes,
+            decryptedBytes.count,
+            &decryptedLength
+        )
+        
+        if cryptStatus == kCCSuccess {
+            let decryptedData = Data(bytes: decryptedBytes, count: decryptedLength)
+            return String(data: decryptedData, encoding: .utf8)
+        }
+        
+        return nil
+    }
+    
+    private func padData(_ data: Data, toLength length: Int) -> Data {
+        var paddedData = data
+        if paddedData.count < length {
+            paddedData.append(contentsOf: [UInt8](repeating: 0, count: length - paddedData.count))
+        }
+        return paddedData
+    }
+    
+    // MARK: - RSA 加密方法（替代 RSAUtil）
+    
+    private func encryptWithRSA(_ plaintext: String, publicKeyStr: String) -> String? {
+        // 清理公钥字符串
+        var cleanedKey = publicKeyStr
+            .replacingOccurrences(of: "-----BEGIN PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "-----END PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "-----BEGIN RSA PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "-----END RSA PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        
+        // Base64 解码
+        guard let keyData = Data(base64Encoded: cleanedKey) else {
+            print("公钥 Base64 解码失败")
+            return nil
+        }
+        
+        // 创建公钥
+        let attributes: [CFString: Any] = [
+            kSecAttrKeyType: kSecAttrKeyTypeRSA,
+            kSecAttrKeyClass: kSecAttrKeyClassPublic,
+            kSecAttrKeySizeInBits: 2048
+        ]
+        
+        var error: Unmanaged<CFError>?
+        guard let publicKey = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &error) else {
+            print("创建公钥失败: \(error?.takeRetainedValue().localizedDescription ?? "未知错误")")
+            return nil
+        }
+        
+        // 加密数据
+        guard let plainData = plaintext.data(using: .utf8) else {
+            print("明文数据转换失败")
+            return nil
+        }
+        
+        let algorithm: SecKeyAlgorithm = .rsaEncryptionPKCS1
+        
+        guard SecKeyIsAlgorithmSupported(publicKey, .encrypt, algorithm) else {
+            print("算法不支持")
+            return nil
+        }
+        
+        var encryptError: Unmanaged<CFError>?
+        guard let encryptedData = SecKeyCreateEncryptedData(publicKey, algorithm, plainData as CFData, &encryptError) as Data? else {
+            print("加密失败: \(encryptError?.takeRetainedValue().localizedDescription ?? "未知错误")")
+            return nil
+        }
+        
+        return encryptedData.base64EncodedString()
+    }
+    
+    // MARK: - MD5 计算方法（如果需要）
+    
+    private func md5(_ input: String) -> String {
+        let data = Data(input.utf8)
+        var digest = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
+        
+        data.withUnsafeBytes {
+            _ = CC_MD5($0.baseAddress, CC_LONG(data.count), &digest)
+        }
+        
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
 }

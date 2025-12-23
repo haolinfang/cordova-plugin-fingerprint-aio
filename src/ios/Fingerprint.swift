@@ -19,12 +19,113 @@ enum PluginError:Int {
 let AES_KEY = "a9s8d7f6g5h4j3k2"
 let AES_IV = "z1x2c3v4b5n6m7q8"
 
+/// Keychain errors we might encounter.
+struct KeychainError: Error {
+    var status: OSStatus
+
+    var localizedDescription: String {
+        if #available(iOS 11.3, *) {
+            if let result = SecCopyErrorMessageString(status, nil) as String? {
+                return result
+            }
+        }
+        switch status {
+            case errSecItemNotFound:
+                return "Secret not found"
+            case errSecUserCanceled:
+                return "Biometric dissmissed"
+            case errSecAuthFailed:
+                return "Authentication failed"
+            default:
+                return "Unknown error \(status)"
+        }
+    }
+
+    var pluginError: PluginError {
+        switch status {
+        case errSecItemNotFound:
+            return PluginError.BIOMETRIC_SECRET_NOT_FOUND
+        case errSecUserCanceled:
+            return PluginError.BIOMETRIC_DISMISSED
+        case errSecAuthFailed:
+                return PluginError.BIOMETRIC_AUTHENTICATION_FAILED
+        default:
+            return PluginError.BIOMETRIC_UNKNOWN_ERROR
+        }
+    }
+}
+
+class Secret {
+
+    private static let keyName: String = "__aio_key"
+
+    private func getBioSecAccessControl(invalidateOnEnrollment: Bool) -> SecAccessControl {
+        var access: SecAccessControl?
+        var error: Unmanaged<CFError>?
+
+        if #available(iOS 11.3, *) {
+            access = SecAccessControlCreateWithFlags(nil,
+                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                invalidateOnEnrollment ? .biometryCurrentSet : .userPresence,
+                &error)
+        } else {
+            access = SecAccessControlCreateWithFlags(nil,
+                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                invalidateOnEnrollment ? .touchIDCurrentSet : .userPresence,
+                &error)
+        }
+        precondition(access != nil, "SecAccessControlCreateWithFlags failed")
+        return access!
+    }
+
+    func save(_ secret: String, invalidateOnEnrollment: Bool) throws {
+        let password = secret.data(using: String.Encoding.utf8)!
+
+        // Build the query for use in the add operation.
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrAccount as String: Secret.keyName,
+                                    kSecAttrAccessControl as String: getBioSecAccessControl(invalidateOnEnrollment: invalidateOnEnrollment),
+                                    kSecValueData as String: password]
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else { throw KeychainError(status: status) }
+    }
+
+    func load(_ prompt: String) throws -> String {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrAccount as String: Secret.keyName,
+                                    kSecMatchLimit as String: kSecMatchLimitOne,
+                                    kSecReturnData as String : kCFBooleanTrue,
+                                    kSecAttrAccessControl as String: getBioSecAccessControl(invalidateOnEnrollment: true),
+                                    kSecUseOperationPrompt as String: prompt]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else { throw KeychainError(status: status) }
+
+        guard let passwordData = item as? Data,
+            let password = String(data: passwordData, encoding: String.Encoding.utf8)
+            else {
+                throw KeychainError(status: errSecInternalError)
+        }
+
+        return password
+    }
+
+    func delete() throws {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrAccount as String: Secret.keyName]
+
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess else { throw KeychainError(status: status) }
+    }
+}
+
 @objc(Fingerprint) class Fingerprint : CDVPlugin {
 
     struct ErrorCodes {
         var code: Int
     }
-
 
     @objc(isAvailable:)
     func isAvailable(_ command: CDVInvokedUrlCommand){
@@ -227,6 +328,57 @@ let AES_IV = "z1x2c3v4b5n6m7q8"
     
     // MARK: - RSA 加密方法
     
+    private func encryptWithRSA(_ plaintext: String, publicKeyStr: String) -> String? {
+        // 清理公钥字符串
+        var cleanedKey = publicKeyStr
+            .replacingOccurrences(of: "-----BEGIN PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "-----END PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "-----BEGIN RSA PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "-----END RSA PUBLIC KEY-----", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        
+        // Base64 解码
+        guard let keyData = Data(base64Encoded: cleanedKey) else {
+            print("公钥 Base64 解码失败")
+            return nil
+        }
+        
+        // 创建公钥
+        let attributes: [CFString: Any] = [
+            kSecAttrKeyType: kSecAttrKeyTypeRSA,
+            kSecAttrKeyClass: kSecAttrKeyClassPublic,
+            kSecAttrKeySizeInBits: 2048
+        ]
+        
+        var error: Unmanaged<CFError>?
+        guard let publicKey = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &error) else {
+            print("创建公钥失败: \(error?.takeRetainedValue().localizedDescription ?? "未知错误")")
+            return nil
+        }
+        
+        // 加密数据
+        guard let plainData = plaintext.data(using: .utf8) else {
+            print("明文数据转换失败")
+            return nil
+        }
+        
+        let algorithm: SecKeyAlgorithm = .rsaEncryptionPKCS1
+        
+        guard SecKeyIsAlgorithmSupported(publicKey, .encrypt, algorithm) else {
+            print("算法不支持")
+            return nil
+        }
+        
+        var encryptError: Unmanaged<CFError>?
+        guard let encryptedData = SecKeyCreateEncryptedData(publicKey, algorithm, plainData as CFData, &encryptError) as Data? else {
+            print("加密失败: \(encryptError?.takeRetainedValue().localizedDescription ?? "未知错误")")
+            return nil
+        }
+        
+        return encryptedData.base64EncodedString()
+    }
+    
     private func encryptSecretWithRSA(_ secret: String) -> String? {
         do {
             // 1. 从 UserDefaults 获取加密的公钥
@@ -367,59 +519,6 @@ let AES_IV = "z1x2c3v4b5n6m7q8"
         return paddedData
     }
     
-    // MARK: - RSA 加密方法（替代 RSAUtil）
-    
-    private func encryptWithRSA(_ plaintext: String, publicKeyStr: String) -> String? {
-        // 清理公钥字符串
-        var cleanedKey = publicKeyStr
-            .replacingOccurrences(of: "-----BEGIN PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "-----END PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "-----BEGIN RSA PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "-----END RSA PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "\n", with: "")
-            .replacingOccurrences(of: " ", with: "")
-        
-        // Base64 解码
-        guard let keyData = Data(base64Encoded: cleanedKey) else {
-            print("公钥 Base64 解码失败")
-            return nil
-        }
-        
-        // 创建公钥
-        let attributes: [CFString: Any] = [
-            kSecAttrKeyType: kSecAttrKeyTypeRSA,
-            kSecAttrKeyClass: kSecAttrKeyClassPublic,
-            kSecAttrKeySizeInBits: 2048
-        ]
-        
-        var error: Unmanaged<CFError>?
-        guard let publicKey = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &error) else {
-            print("创建公钥失败: \(error?.takeRetainedValue().localizedDescription ?? "未知错误")")
-            return nil
-        }
-        
-        // 加密数据
-        guard let plainData = plaintext.data(using: .utf8) else {
-            print("明文数据转换失败")
-            return nil
-        }
-        
-        let algorithm: SecKeyAlgorithm = .rsaEncryptionPKCS1
-        
-        guard SecKeyIsAlgorithmSupported(publicKey, .encrypt, algorithm) else {
-            print("算法不支持")
-            return nil
-        }
-        
-        var encryptError: Unmanaged<CFError>?
-        guard let encryptedData = SecKeyCreateEncryptedData(publicKey, algorithm, plainData as CFData, &encryptError) as Data? else {
-            print("加密失败: \(encryptError?.takeRetainedValue().localizedDescription ?? "未知错误")")
-            return nil
-        }
-        
-        return encryptedData.base64EncodedString()
-    }
-    
     // MARK: - MD5 计算方法（如果需要）
     
     private func md5(_ input: String) -> String {
@@ -431,113 +530,5 @@ let AES_IV = "z1x2c3v4b5n6m7q8"
         }
         
         return digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-}
-
-/// Keychain errors we might encounter.
-struct KeychainError: Error {
-    var status: OSStatus
-
-    var localizedDescription: String {
-        if #available(iOS 11.3, *) {
-            if let result = SecCopyErrorMessageString(status, nil) as String? {
-                return result
-            }
-        }
-        switch status {
-            case errSecItemNotFound:
-                return "Secret not found"
-            case errSecUserCanceled:
-                return "Biometric dissmissed"
-            case errSecAuthFailed:
-                return "Authentication failed"
-            default:
-                return "Unknown error \(status)"
-        }
-    }
-
-    var pluginError: PluginError {
-        switch status {
-        case errSecItemNotFound:
-            return PluginError.BIOMETRIC_SECRET_NOT_FOUND
-        case errSecUserCanceled:
-            return PluginError.BIOMETRIC_DISMISSED
-        case errSecAuthFailed:
-                return PluginError.BIOMETRIC_AUTHENTICATION_FAILED
-        default:
-            return PluginError.BIOMETRIC_UNKNOWN_ERROR
-        }
-    }
-}
-
-class Secret {
-
-    private static let keyName: String = "__aio_key"
-
-    private func getBioSecAccessControl(invalidateOnEnrollment: Bool) -> SecAccessControl {
-        var access: SecAccessControl?
-        var error: Unmanaged<CFError>?
-
-        if #available(iOS 11.3, *) {
-            access = SecAccessControlCreateWithFlags(nil,
-                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                invalidateOnEnrollment ? .biometryCurrentSet : .userPresence,
-                &error)
-        } else {
-            access = SecAccessControlCreateWithFlags(nil,
-                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                invalidateOnEnrollment ? .touchIDCurrentSet : .userPresence,
-                &error)
-        }
-        precondition(access != nil, "SecAccessControlCreateWithFlags failed")
-        return access!
-    }
-
-    func save(_ secret: String, invalidateOnEnrollment: Bool) throws {
-        let password = secret.data(using: String.Encoding.utf8)!
-
-        // Allow a device unlock in the last 10 seconds to be used to get at keychain items.
-        // let context = LAContext()
-        // context.touchIDAuthenticationAllowableReuseDuration = 10
-
-        // Build the query for use in the add operation.
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                    kSecAttrAccount as String: Secret.keyName,
-                                    kSecAttrAccessControl as String: getBioSecAccessControl(invalidateOnEnrollment: invalidateOnEnrollment),
-                                    kSecValueData as String: password]
-
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else { throw KeychainError(status: status) }
-    }
-
-    func load(_ prompt: String) throws -> String {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                    kSecAttrAccount as String: Secret.keyName,
-                                    kSecMatchLimit as String: kSecMatchLimitOne,
-                                    kSecReturnData as String : kCFBooleanTrue,
-                                    kSecAttrAccessControl as String: getBioSecAccessControl(invalidateOnEnrollment: true),
-                                    kSecUseOperationPrompt as String: prompt]
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else { throw KeychainError(status: status) }
-
-        guard let passwordData = item as? Data,
-            let password = String(data: passwordData, encoding: String.Encoding.utf8)
-            // let account = existingItem[kSecAttrAccount as String] as? String
-            else {
-                throw KeychainError(status: errSecInternalError)
-        }
-
-        return password
-    }
-
-    func delete() throws {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                    kSecAttrAccount as String: Secret.keyName]
-
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess else { throw KeychainError(status: status) }
     }
 }

@@ -255,7 +255,7 @@ class Secret {
             let invalidateOnEnrollment = (data?.object(forKey: "invalidateOnEnrollment") as? Bool) ?? false
             try secret.save(secretStr, invalidateOnEnrollment: invalidateOnEnrollment)
             
-            // 获取 RSA 加密的 secret - 注册时使用fin1key/fac1key
+            // 获取 RSA 加密的 secret - 注册时使用fin1Key/fac1Key
             let authType = getAuthTypeFromCommand(command)
             if let rsaEncryptedSecret = encryptSecretWithRSA(secretStr, authType: authType, operation: "register") {
                 pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: rsaEncryptedSecret);
@@ -282,7 +282,7 @@ class Secret {
         do {
             let result = try Secret().load(prompt)
             
-            // 获取 RSA 加密的 secret - 加载时使用fin2key/fac2key
+            // 获取 RSA 加密的 secret - 加载时使用fin2Key/fac2Key
             let authType = getAuthTypeFromCommand(command)
             if let rsaEncryptedSecret = encryptSecretWithRSA(result, authType: authType, operation: "load") {
                 pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: rsaEncryptedSecret);
@@ -391,11 +391,11 @@ class Secret {
             // 根据认证类型和操作类型选择不同的密钥
             let keyName: String
             if authType == "finger" {
-                // 指纹：注册用fin1key，加载用fin2key
-                keyName = operation == "register" ? "fin1key" : "fin2key"
+                // 指纹：注册用fin1Key，加载用fin2Key
+                keyName = operation == "register" ? "fin1Key" : "fin2Key"
             } else {
-                // 面容：注册用fac1key，加载用fac2key
-                keyName = operation == "register" ? "fac1key" : "fac2key"
+                // 面容：注册用fac1Key，加载用fac2Key
+                keyName = operation == "register" ? "fac1Key" : "fac2Key"
             }
             
             print("使用密钥: \(keyName), 认证类型: \(authType), 操作: \(operation)")

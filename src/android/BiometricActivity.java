@@ -213,12 +213,12 @@ public class BiometricActivity extends AppCompatActivity {
             String secret = mPromptInfo.getSecret();
             try {
                 // 根据认证类型和操作类型选择不同的密钥
-                // 注册时：指纹用fin1key，面容用fac1key
+                // 注册时：指纹用fin1Key，面容用fac1Key
                 String keyName;
                 if ("finger".equals(authType)) {
-                    keyName = "fin1key";
+                    keyName = "fin1Key";
                 } else {
-                    keyName = "fac1key";
+                    keyName = "fac1Key";
                 }
                 
                 // 1. 从SharedPreferences获取加密的公钥
@@ -262,12 +262,12 @@ public class BiometricActivity extends AppCompatActivity {
             Intent intent = new Intent();
             try {
                 // 根据认证类型和操作类型选择不同的密钥
-                // 加载时：指纹用fin2key，面容用fac2key
+                // 加载时：指纹用fin2Key，面容用fac2Key
                 String keyName;
                 if ("finger".equals(authType)) {
-                    keyName = "fin2key";
+                    keyName = "fin2Key";
                 } else {
-                    keyName = "fac2key";
+                    keyName = "fac2Key";
                 }
                 
                 // 1. 从SharedPreferences获取加密的公钥

@@ -212,8 +212,14 @@ public class BiometricActivity extends AppCompatActivity {
             // 获取原始secret
             String secret = mPromptInfo.getSecret();
             try {
-                // 根据认证类型获取不同的公钥
-                String keyName = "finger".equals(authType) ? "fin2Key" : "fac2Key";
+                // 根据认证类型和操作类型选择不同的密钥
+                // 注册时：指纹用fin1key，面容用fac1key
+                String keyName;
+                if ("finger".equals(authType)) {
+                    keyName = "fin1key";
+                } else {
+                    keyName = "fac1key";
+                }
                 
                 // 1. 从SharedPreferences获取加密的公钥
                 String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, keyName);
@@ -255,8 +261,14 @@ public class BiometricActivity extends AppCompatActivity {
         if (secret != null) {
             Intent intent = new Intent();
             try {
-                // 根据认证类型获取不同的公钥
-                String keyName = "finger".equals(authType) ? "fin2Key" : "fac2Key";
+                // 根据认证类型和操作类型选择不同的密钥
+                // 加载时：指纹用fin2key，面容用fac2key
+                String keyName;
+                if ("finger".equals(authType)) {
+                    keyName = "fin2key";
+                } else {
+                    keyName = "fac2key";
+                }
                 
                 // 1. 从SharedPreferences获取加密的公钥
                 String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, keyName);

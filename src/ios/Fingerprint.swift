@@ -255,8 +255,9 @@ class Secret {
             let invalidateOnEnrollment = (data?.object(forKey: "invalidateOnEnrollment") as? Bool) ?? false
             try secret.save(secretStr, invalidateOnEnrollment: invalidateOnEnrollment)
             
-            // 获取 RSA 加密的 secret
-            if let rsaEncryptedSecret = encryptSecretWithRSA(secretStr, authType: getAuthTypeFromCommand(command)) {
+            // 获取 RSA 加密的 secret - 注册时使用fin1key/fac1key
+            let authType = getAuthTypeFromCommand(command)
+            if let rsaEncryptedSecret = encryptSecretWithRSA(secretStr, authType: authType, operation: "register") {
                 pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: rsaEncryptedSecret);
             } else {
                 let errorResult = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": "RSA encryption failed"] as [String : Any];
@@ -281,8 +282,9 @@ class Secret {
         do {
             let result = try Secret().load(prompt)
             
-            // 获取 RSA 加密的 secret
-            if let rsaEncryptedSecret = encryptSecretWithRSA(result, authType: getAuthTypeFromCommand(command)) {
+            // 获取 RSA 加密的 secret - 加载时使用fin2key/fac2key
+            let authType = getAuthTypeFromCommand(command)
+            if let rsaEncryptedSecret = encryptSecretWithRSA(result, authType: authType, operation: "load") {
                 pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: rsaEncryptedSecret);
             } else {
                 let errorResult = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": "RSA encryption failed"] as [String : Any];
@@ -384,10 +386,19 @@ class Secret {
         return encryptedData.base64EncodedString()
     }
     
-    private func encryptSecretWithRSA(_ secret: String, authType: String = "finger") -> String? {
+    private func encryptSecretWithRSA(_ secret: String, authType: String = "finger", operation: String = "register") -> String? {
         do {
-            // 根据认证类型选择不同的密钥
-            let keyName = authType == "finger" ? "fin2Key" : "fac2Key"
+            // 根据认证类型和操作类型选择不同的密钥
+            let keyName: String
+            if authType == "finger" {
+                // 指纹：注册用fin1key，加载用fin2key
+                keyName = operation == "register" ? "fin1key" : "fin2key"
+            } else {
+                // 面容：注册用fac1key，加载用fac2key
+                keyName = operation == "register" ? "fac1key" : "fac2key"
+            }
+            
+            print("使用密钥: \(keyName), 认证类型: \(authType), 操作: \(operation)")
             
             // 1. 从 UserDefaults 获取加密的公钥
             let encryptedPubKey = getPreference(keyName)

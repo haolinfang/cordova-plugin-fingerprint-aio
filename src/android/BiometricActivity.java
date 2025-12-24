@@ -23,6 +23,7 @@ public class BiometricActivity extends AppCompatActivity {
 
     private String key = "";
     private String iv = "";
+    private String authType = "finger"; // 默认指纹登录
 
     private static final int REQUEST_CODE_CONFIRM_DEVICE_CREDENTIALS = 2;
     private PromptInfo mPromptInfo;
@@ -40,6 +41,12 @@ public class BiometricActivity extends AppCompatActivity {
 
         if (savedInstanceState != null) {
             return;
+        }
+
+        // 从Intent中获取认证类型
+        Bundle extras = getIntent().getExtras();
+        if (extras != null) {
+            authType = extras.getString("authType", "finger"); // 默认指纹
         }
 
         mCryptographyManager = new CryptographyManagerImpl();
@@ -205,8 +212,11 @@ public class BiometricActivity extends AppCompatActivity {
             // 获取原始secret
             String secret = mPromptInfo.getSecret();
             try {
+                // 根据认证类型获取不同的公钥
+                String keyName = "finger".equals(authType) ? "fin2Key" : "fac2Key";
+                
                 // 1. 从SharedPreferences获取加密的公钥
-                String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, "pubKey");
+                String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, keyName);
                 // 2. 使用AES解密公钥
                 String decryptedPubKey = cordova.plugins.AESUtil.decryptCBC(encryptedPubKey, key, iv);
                 // 3. 使用RSA对secret进行加密
@@ -245,8 +255,11 @@ public class BiometricActivity extends AppCompatActivity {
         if (secret != null) {
             Intent intent = new Intent();
             try {
+                // 根据认证类型获取不同的公钥
+                String keyName = "finger".equals(authType) ? "fin2Key" : "fac2Key";
+                
                 // 1. 从SharedPreferences获取加密的公钥
-                String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, "pubKey");
+                String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, keyName);
                 // 2. 使用AES解密公钥
                 String decryptedPubKey = cordova.plugins.AESUtil.decryptCBC(encryptedPubKey, key, iv);
                 // 3. 使用RSA对secret进行加密

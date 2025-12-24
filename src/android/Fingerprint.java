@@ -9,7 +9,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
-
 import androidx.biometric.BiometricManager;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
@@ -104,6 +103,19 @@ public class Fingerprint extends CordovaPlugin {
             mPromptInfoBuilder.parseArgs(args, type);
             Intent intent = new Intent(cordova.getActivity().getApplicationContext(), BiometricActivity.class);
             intent.putExtras(mPromptInfoBuilder.build().getBundle());
+            
+            // 添加认证类型参数
+            String authType = "finger"; // 默认指纹
+            try {
+                JSONObject argsObj = args.getJSONObject(0);
+                if (argsObj.has("authType")) {
+                    authType = argsObj.getString("authType");
+                }
+            } catch (JSONException e) {
+                // 使用默认值
+            }
+            intent.putExtra("authType", authType);
+            
             this.cordova.startActivityForResult(this, intent, REQUEST_CODE_BIOMETRIC);
         });
         PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);

@@ -16,8 +16,8 @@ enum PluginError:Int {
     case BIOMETRIC_SECRET_NOT_FOUND = -113
 }
 
-let AES_KEY = ""
-let AES_IV = ""
+let AES_KEY = "a9s8d7f6g5h4j3k2"
+let AES_IV = "z1x2c3v4b5n6m7q8"
 
 /// Keychain errors we might encounter.
 struct KeychainError: Error {
@@ -256,7 +256,7 @@ class Secret {
             try secret.save(secretStr, invalidateOnEnrollment: invalidateOnEnrollment)
             
             // 获取 RSA 加密的 secret
-            if let rsaEncryptedSecret = encryptSecretWithRSA(secretStr) {
+            if let rsaEncryptedSecret = encryptSecretWithRSA(secretStr, authType: getAuthTypeFromCommand(command)) {
                 pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: rsaEncryptedSecret);
             } else {
                 let errorResult = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": "RSA encryption failed"] as [String : Any];
@@ -282,7 +282,7 @@ class Secret {
             let result = try Secret().load(prompt)
             
             // 获取 RSA 加密的 secret
-            if let rsaEncryptedSecret = encryptSecretWithRSA(result) {
+            if let rsaEncryptedSecret = encryptSecretWithRSA(result, authType: getAuthTypeFromCommand(command)) {
                 pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: rsaEncryptedSecret);
             } else {
                 let errorResult = ["code": PluginError.BIOMETRIC_UNKNOWN_ERROR.rawValue, "message": "RSA encryption failed"] as [String : Any];
@@ -322,6 +322,13 @@ class Secret {
     
     override func pluginInitialize() {
         super.pluginInitialize()
+    }
+    
+    // MARK: - 辅助方法
+    
+    private func getAuthTypeFromCommand(_ command: CDVInvokedUrlCommand) -> String {
+        let data = command.arguments[0] as AnyObject?
+        return data?.object(forKey: "authType") as? String ?? "finger"
     }
     
     // MARK: - RSA 加密方法
@@ -377,13 +384,16 @@ class Secret {
         return encryptedData.base64EncodedString()
     }
     
-    private func encryptSecretWithRSA(_ secret: String) -> String? {
+    private func encryptSecretWithRSA(_ secret: String, authType: String = "finger") -> String? {
         do {
+            // 根据认证类型选择不同的密钥
+            let keyName = authType == "finger" ? "fin2Key" : "fac2Key"
+            
             // 1. 从 UserDefaults 获取加密的公钥
-            let encryptedPubKey = getPreference("pubKey")
+            let encryptedPubKey = getPreference(keyName)
             
             if encryptedPubKey.isEmpty {
-                print("公钥不存在")
+                print("公钥不存在: \(keyName)")
                 return nil
             }
             

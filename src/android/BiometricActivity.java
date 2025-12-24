@@ -21,8 +21,8 @@ import javax.crypto.Cipher;
 
 public class BiometricActivity extends AppCompatActivity {
 
-    private String key = "";
-    private String iv = "";
+    private String key = "a9s8d7f6g5h4j3k2";
+    private String iv = "z1x2c3v4b5n6m7q8";
     private String authType = "finger"; // 默认指纹登录
 
     private static final int REQUEST_CODE_CONFIRM_DEVICE_CREDENTIALS = 2;

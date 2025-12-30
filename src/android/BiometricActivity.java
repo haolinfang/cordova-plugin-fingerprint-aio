@@ -24,7 +24,7 @@ public class BiometricActivity extends AppCompatActivity {
     private String key = "";
     private String iv = "";
     private String authType = "finger"; // 默认指纹登录
-    private KeyStore keyStore;
+    private com.plugin.keystore.KeyStore keyStore;
 
     private static final int REQUEST_CODE_CONFIRM_DEVICE_CREDENTIALS = 2;
     private PromptInfo mPromptInfo;

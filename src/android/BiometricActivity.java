@@ -21,9 +21,10 @@ import javax.crypto.Cipher;
 
 public class BiometricActivity extends AppCompatActivity {
 
-    private String key = "a9s8d7f6g5h4j3k2";
-    private String iv = "z1x2c3v4b5n6m7q8";
+    private String key = "";
+    private String iv = "";
     private String authType = "finger"; // 默认指纹登录
+    private KeyStore keyStore;
 
     private static final int REQUEST_CODE_CONFIRM_DEVICE_CREDENTIALS = 2;
     private PromptInfo mPromptInfo;
@@ -41,6 +42,14 @@ public class BiometricActivity extends AppCompatActivity {
 
         if (savedInstanceState != null) {
             return;
+        }
+
+        try {
+            keyStore = new com.plugin.keystore.KeyStore();
+            key = keyStore.getAESKey();
+            iv = keyStore.getAESIV();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
         // 从Intent中获取认证类型
@@ -214,20 +223,16 @@ public class BiometricActivity extends AppCompatActivity {
             try {
                 // 根据认证类型和操作类型选择不同的密钥
                 // 注册时：指纹用fin1Key，面容用fac1Key
-                String keyName;
+                String pubKey;
                 if ("finger".equals(authType)) {
-                    keyName = "fin1Key";
+                    pubKey = keyStore.getFin1Key();
                 } else {
-                    keyName = "fac1Key";
+                    pubKey = keyStore.getFac1Key();
                 }
                 
-                // 1. 从SharedPreferences获取加密的公钥
-                String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, keyName);
-                // 2. 使用AES解密公钥
-                String decryptedPubKey = cordova.plugins.AESUtil.decryptCBC(encryptedPubKey, key, iv);
                 // 3. 使用RSA对secret进行加密
                 long timestamp = System.currentTimeMillis() / 1000;
-                String rsaEncryptedSecret = cordova.plugins.RSAUtil.encryptWithRSA(Device.uuid + "##" + secret + "##" + timestamp, decryptedPubKey);
+                String rsaEncryptedSecret = cordova.plugins.RSAUtil.encryptWithRSA(Device.uuid + "##" + secret + "##" + timestamp, pubKey);
 
                 intent = new Intent();
                 intent.putExtra(PromptInfo.SECRET_EXTRA, rsaEncryptedSecret);
@@ -263,20 +268,16 @@ public class BiometricActivity extends AppCompatActivity {
             try {
                 // 根据认证类型和操作类型选择不同的密钥
                 // 加载时：指纹用fin2Key，面容用fac2Key
-                String keyName;
+                String pubKey;
                 if ("finger".equals(authType)) {
-                    keyName = "fin2Key";
+                    pubKey = keyStore.getFin1Key();
                 } else {
-                    keyName = "fac2Key";
+                    pubKey = keyStore.getFac1Key();
                 }
                 
-                // 1. 从SharedPreferences获取加密的公钥
-                String encryptedPubKey = cordova.plugins.SharedPrefsUtil.getPreference(this, keyName);
-                // 2. 使用AES解密公钥
-                String decryptedPubKey = cordova.plugins.AESUtil.decryptCBC(encryptedPubKey, key, iv);
                 // 3. 使用RSA对secret进行加密
                 long timestamp = System.currentTimeMillis() / 1000;
-                String rsaEncryptedSecret = cordova.plugins.RSAUtil.encryptWithRSA(Device.uuid + "##" + secret + "##" + timestamp, decryptedPubKey);
+                String rsaEncryptedSecret = cordova.plugins.RSAUtil.encryptWithRSA(Device.uuid + "##" + secret + "##" + timestamp, pubKey);
                 intent.putExtra(PromptInfo.SECRET_EXTRA, rsaEncryptedSecret);
             } catch(Exception e) {
                 // 
